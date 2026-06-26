@@ -1,0 +1,16 @@
+{
+  "name": "PurePlant - Plant Care Tracker",
+  "short_name": "PurePlant",
+  "description": "Track your plant watering schedule. No accounts, no ads, no subscriptions.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f0fdf4",
+  "theme_color": "#16a34a",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

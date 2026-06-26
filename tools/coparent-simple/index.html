@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CoParent Simple - Easy Co-Parenting Coordination</title>
+<meta name="description" content="Simple co-parenting coordination. Custody calendar, shared expenses, activity log. No accounts, no ads, no subscriptions. Your data stays in your browser.">
+<meta property="og:title" content="CoParent Simple - Easy Co-Parenting Coordination">
+<meta property="og:description" content="Custody calendar, shared expenses, activity log. No accounts, no ads. Free forever.">
+<meta property="og:type" content="website">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#7c3aed">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        brand: { 50: '#f5f3ff', 100: '#ede9fe', 200: '#ddd6fe', 300: '#c4b5fd', 400: '#a78bfa', 500: '#8b5cf6', 600: '#7c3aed', 700: '#6d28d9', 800: '#5b21b6', 900: '#4c1d95' }
+      }
+    }
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  .fade-in { animation: fadeIn 0.2s ease-in; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  .slide-in { animation: slideIn 0.2s ease-out; }
+  @keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
+
+const STORAGE_KEY = 'coparent-simple-data';
+const SETTINGS_KEY = 'coparent-simple-settings';
+
+// ---- Utility functions ----
+function generateId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultData();
+    return JSON.parse(raw);
+  } catch { return defaultData(); }
+}
+
+function defaultData() {
+  return {
+    parents: [
+      { id: generateId(), name: 'Parent A', color: '#7c3aed' },
+      { id: generateId(), name: 'Parent B', color: '#f59e0b' }
+    ],
+    children: [],
+    schedule: {},     // { 'YYYY-MM-DD': parentId }
+    expenses: [],     // { id, date, description, amount, paidBy, split, splitType, splitPercent, category }
+    log: [],          // { id, timestamp, text, author }
+    recurringExpenses: [], // { id, description, amount, paidBy, splitType, splitPercent, category, dayOfMonth, active }
+    lastRecurringCheck: null, // 'YYYY-MM' last month we generated recurring expenses
+    defaultPattern: null // { type: 'alternating-weeks' | 'custom', ... }
+  };
+}
+
+function saveData(data) { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || { dark: false }; }
+  catch { return { dark: false }; }
+}
+
+function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
+
+function formatCurrency(amount) {
+  return '$' + Math.abs(amount).toFixed(2);
+}
+
+function formatDate(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatTimestamp(ts) {
+  const d = new Date(ts);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+    d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function toDateKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function getDaysInMonth(year, month) {
+  return new Date(year, month + 1, 0).getDate();
+}
+
+function getFirstDayOfMonth(year, month) {
+  return new Date(year, month, 1).getDay();
+}
+
+const EXPENSE_CATEGORIES = ['Childcare', 'Medical', 'School', 'Activities', 'Clothing', 'Food', 'Transport', 'Other'];
+
+const SCHEDULE_PATTERNS = [
+  { id: 'alternating-weeks', label: 'Alternating Weeks', desc: 'Week on / week off' },
+  { id: '2-2-3', label: '2-2-3 Rotation', desc: 'Mon-Tue / Wed-Thu / Fri-Sun alternating' },
+  { id: '3-4-4-3', label: '3-4-4-3 Rotation', desc: '3 days / 4 days alternating' },
+  { id: 'every-other-weekend', label: 'Every Other Weekend', desc: 'Primary parent weekdays, alternating weekends' },
+  { id: 'custom', label: 'Custom', desc: 'Set each day manually' }
+];
+
+// ---- Apply schedule pattern ----
+function applyPattern(patternId, parents, year, month) {
+  const schedule = {};
+  const daysInMonth = getDaysInMonth(year, month);
+  const p1 = parents[0]?.id;
+  const p2 = parents[1]?.id;
+  if (!p1 || !p2) return schedule;
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(year, month, d);
+    const dayOfWeek = date.getDay();
+    const dateKey = toDateKey(date);
+    // Day of year for alternation calculation
+    const startOfYear = new Date(year, 0, 1);
+    const dayOfYear = Math.floor((date - startOfYear) / 86400000);
+    const weekOfYear = Math.floor(dayOfYear / 7);
+
+    switch (patternId) {
+      case 'alternating-weeks':
+        schedule[dateKey] = weekOfYear % 2 === 0 ? p1 : p2;
+        break;
+      case '2-2-3': {
+        // 2 days P1, 2 days P2, 3 days (alt), repeat with swap
+        const cycleDay = dayOfYear % 14;
+        if (cycleDay < 2) schedule[dateKey] = p1;
+        else if (cycleDay < 4) schedule[dateKey] = p2;
+        else if (cycleDay < 7) schedule[dateKey] = p1;
+        else if (cycleDay < 9) schedule[dateKey] = p2;
+        else if (cycleDay < 11) schedule[dateKey] = p1;
+        else schedule[dateKey] = p2;
+        break;
+      }
+      case '3-4-4-3': {
+        const cycleDay = dayOfYear % 14;
+        if (cycleDay < 3) schedule[dateKey] = p1;
+        else if (cycleDay < 7) schedule[dateKey] = p2;
+        else if (cycleDay < 11) schedule[dateKey] = p1;
+        else schedule[dateKey] = p2;
+        break;
+      }
+      case 'every-other-weekend': {
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+          schedule[dateKey] = weekOfYear % 2 === 0 ? p1 : p2;
+        } else {
+          schedule[dateKey] = p1; // Primary parent on weekdays
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  return schedule;
+}
+
+
+// ============ MAIN APP ============
+function App() {
+  const [data, setData] = useState(loadData);
+  const [settings, setSettings] = useState(loadSettings);
+  const [tab, setTab] = useState('calendar');
+
+  useEffect(() => { saveData(data); }, [data]);
+  useEffect(() => {
+    saveSettings(settings);
+    document.documentElement.classList.toggle('dark', settings.dark);
+  }, [settings]);
+
+  const updateData = (updates) => setData(prev => ({ ...prev, ...updates }));
+
+  const tabs = [
+    { id: 'calendar', label: 'Calendar', icon: '📅' },
+    { id: 'expenses', label: 'Expenses', icon: '💰' },
+    { id: 'log', label: 'Log', icon: '📝' },
+    { id: 'settings', label: 'Settings', icon: '⚙️' }
+  ];
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
+      {/* Header */}
+      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-20">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">👨‍👩‍👧‍👦</span>
+            <h1 className="text-lg font-bold text-gray-900 dark:text-white">CoParent Simple</h1>
+          </div>
+          <button onClick={() => setSettings(s => ({ ...s, dark: !s.dark }))}
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300">
+            {settings.dark ? '☀️' : '🌙'}
+          </button>
+        </div>
+      </header>
+
+      {/* Tab bar */}
+      <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-[52px] z-10">
+        <div className="max-w-2xl mx-auto px-4 flex">
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`flex-1 py-3 text-center text-sm font-medium border-b-2 transition-colors ${
+                tab === t.id
+                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              }`}>
+              <span className="mr-1">{t.icon}</span>{t.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      {/* Content */}
+      <main className="max-w-2xl mx-auto px-4 py-4 pb-8">
+        {tab === 'calendar' && <CalendarTab data={data} updateData={updateData} />}
+        {tab === 'expenses' && <ExpensesTab data={data} updateData={updateData} />}
+        {tab === 'log' && <LogTab data={data} updateData={updateData} />}
+        {tab === 'settings' && <SettingsTab data={data} setData={setData} updateData={updateData} settings={settings} setSettings={setSettings} />}
+      </main>
+
+      {/* Footer */}
+      <footer className="text-center py-4 text-xs text-gray-400 dark:text-gray-600">
+        No accounts. No ads. No subscriptions. Your data stays in your browser.
+      </footer>
+    </div>
+  );
+}
+
+
+// ============ CALENDAR TAB ============
+function CalendarTab({ data, updateData }) {
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const [showPatternModal, setShowPatternModal] = useState(false);
+  const [selectedDay, setSelectedDay] = useState(null);
+
+  const daysInMonth = getDaysInMonth(viewYear, viewMonth);
+  const firstDay = getFirstDayOfMonth(viewYear, viewMonth);
+  const monthName = new Date(viewYear, viewMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  const prevMonth = () => {
+    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
+    else setViewMonth(m => m - 1);
+  };
+  const nextMonth = () => {
+    if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); }
+    else setViewMonth(m => m + 1);
+  };
+
+  const toggleDay = (dateKey) => {
+    const parentIds = data.parents.map(p => p.id);
+    if (parentIds.length < 2) return;
+    const current = data.schedule[dateKey];
+    let next;
+    if (!current) next = parentIds[0];
+    else if (current === parentIds[0]) next = parentIds[1];
+    else next = null; // Clear
+    const newSchedule = { ...data.schedule };
+    if (next) newSchedule[dateKey] = next;
+    else delete newSchedule[dateKey];
+    updateData({ schedule: newSchedule });
+  };
+
+  const applySchedulePattern = (patternId) => {
+    const patternSchedule = applyPattern(patternId, data.parents, viewYear, viewMonth);
+    updateData({ schedule: { ...data.schedule, ...patternSchedule } });
+    setShowPatternModal(false);
+  };
+
+  // Count days per parent this month
+  const monthCounts = useMemo(() => {
+    const counts = {};
+    data.parents.forEach(p => counts[p.id] = 0);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const key = toDateKey(new Date(viewYear, viewMonth, d));
+      if (data.schedule[key] && counts[data.schedule[key]] !== undefined) {
+        counts[data.schedule[key]]++;
+      }
+    }
+    return counts;
+  }, [data.schedule, data.parents, viewYear, viewMonth, daysInMonth]);
+
+  const todayKey = toDateKey(today);
+
+  return (
+    <div className="fade-in">
+      {/* Month navigation */}
+      <div className="flex items-center justify-between mb-4">
+        <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300">
+          ← Prev
+        </button>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{monthName}</h2>
+        <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300">
+          Next →
+        </button>
+      </div>
+
+      {/* Pattern button */}
+      <button onClick={() => setShowPatternModal(true)}
+        className="w-full mb-4 py-2 px-4 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded-lg text-sm font-medium hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors">
+        Apply Schedule Pattern for {new Date(viewYear, viewMonth).toLocaleDateString('en-US', { month: 'long' })}
+      </button>
+
+      {/* Parent legend + day counts */}
+      <div className="flex gap-3 mb-4">
+        {data.parents.map(p => (
+          <div key={p.id} className="flex items-center gap-2 bg-white dark:bg-gray-800 rounded-lg px-3 py-2 flex-1 border border-gray-200 dark:border-gray-700">
+            <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }}></div>
+            <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{p.name}</span>
+            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 ml-auto">{monthCounts[p.id] || 0}d</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Calendar grid */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="grid grid-cols-7 border-b border-gray-200 dark:border-gray-700">
+          {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+            <div key={d} className="py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400">{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7">
+          {/* Empty cells before first day */}
+          {Array.from({ length: firstDay }, (_, i) => (
+            <div key={'e' + i} className="aspect-square border-b border-r border-gray-100 dark:border-gray-700/50"></div>
+          ))}
+          {/* Day cells */}
+          {Array.from({ length: daysInMonth }, (_, i) => {
+            const day = i + 1;
+            const dateKey = toDateKey(new Date(viewYear, viewMonth, day));
+            const parentId = data.schedule[dateKey];
+            const parent = data.parents.find(p => p.id === parentId);
+            const isToday = dateKey === todayKey;
+            return (
+              <button key={day} onClick={() => toggleDay(dateKey)}
+                className={`aspect-square border-b border-r border-gray-100 dark:border-gray-700/50 flex flex-col items-center justify-center transition-colors relative ${
+                  isToday ? 'ring-2 ring-brand-500 ring-inset' : ''
+                }`}
+                style={parent ? { backgroundColor: parent.color + '30' } : {}}
+                title={parent ? `${parent.name}'s day - tap to change` : 'Tap to assign'}>
+                <span className={`text-sm ${isToday ? 'font-bold' : ''} ${parent ? 'text-gray-800 dark:text-gray-200' : 'text-gray-400 dark:text-gray-600'}`}>
+                  {day}
+                </span>
+                {parent && (
+                  <div className="w-2 h-2 rounded-full mt-0.5" style={{ backgroundColor: parent.color }}></div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <p className="text-xs text-gray-400 dark:text-gray-600 mt-2 text-center">
+        Tap a day to cycle: {data.parents.map(p => p.name).join(' → ')} → Clear
+      </p>
+
+      {/* Pattern modal */}
+      {showPatternModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setShowPatternModal(false)}>
+          <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md max-h-[80vh] overflow-y-auto slide-in" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="font-semibold text-gray-900 dark:text-white">Apply Schedule Pattern</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                This fills {new Date(viewYear, viewMonth).toLocaleDateString('en-US', { month: 'long' })} with the selected pattern. You can still edit individual days after.
+              </p>
+            </div>
+            <div className="p-4 space-y-2">
+              {SCHEDULE_PATTERNS.filter(p => p.id !== 'custom').map(pattern => (
+                <button key={pattern.id} onClick={() => applySchedulePattern(pattern.id)}
+                  className="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                  <div className="font-medium text-sm text-gray-900 dark:text-white">{pattern.label}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{pattern.desc}</div>
+                </button>
+              ))}
+            </div>
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+              <button onClick={() => setShowPatternModal(false)}
+                className="w-full py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ---- Split calculation helper ----
+function calculateSplit(splitType, splitPercent, amount, parents, paidBy) {
+  const amt = parseFloat(parseFloat(amount).toFixed(2));
+  const split = {};
+  if (splitType === '50-50') {
+    parents.forEach(p => split[p.id] = +(amt / parents.length).toFixed(2));
+    const total = Object.values(split).reduce((s, v) => s + v, 0);
+    if (total !== amt) split[parents[0].id] = +(split[parents[0].id] + (amt - total)).toFixed(2);
+  } else if (splitType === 'custom') {
+    const pct = Math.max(0, Math.min(100, splitPercent || 50));
+    // splitPercent is "Parent A pays X%"
+    split[parents[0].id] = +(amt * pct / 100).toFixed(2);
+    if (parents[1]) split[parents[1].id] = +(amt - split[parents[0].id]).toFixed(2);
+  } else {
+    split[paidBy] = amt;
+  }
+  return split;
+}
+
+function splitLabel(exp) {
+  if (exp.splitType === '50-50') return 'Split 50/50';
+  if (exp.splitType === 'custom') return `Split ${exp.splitPercent || 50}/${100 - (exp.splitPercent || 50)}`;
+  return 'Full';
+}
+
+
+// ============ EXPENSES TAB ============
+function ExpensesTab({ data, updateData }) {
+  const [showForm, setShowForm] = useState(false);
+  const [showRecurring, setShowRecurring] = useState(false);
+  const [desc, setDesc] = useState('');
+  const [amount, setAmount] = useState('');
+  const [paidBy, setPaidBy] = useState(data.parents[0]?.id || '');
+  const [splitType, setSplitType] = useState('50-50');
+  const [splitPercent, setSplitPercent] = useState(50);
+  const [category, setCategory] = useState('Other');
+  const [expenseDate, setExpenseDate] = useState(toDateKey(new Date()));
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurringDay, setRecurringDay] = useState(1);
+
+  // Auto-generate recurring expenses for current month on mount
+  useEffect(() => {
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    if (data.lastRecurringCheck === currentMonth) return;
+    if (!data.recurringExpenses || data.recurringExpenses.length === 0) {
+      if (data.lastRecurringCheck !== currentMonth) {
+        updateData({ lastRecurringCheck: currentMonth });
+      }
+      return;
+    }
+
+    const activeRecurring = data.recurringExpenses.filter(r => r.active !== false);
+    if (activeRecurring.length === 0) {
+      updateData({ lastRecurringCheck: currentMonth });
+      return;
+    }
+
+    const newExpenses = [];
+    const newLogs = [];
+    activeRecurring.forEach(r => {
+      // Check if this recurring expense was already generated this month
+      const alreadyExists = data.expenses.some(e => e.recurringId === r.id && e.date?.startsWith(currentMonth));
+      if (alreadyExists) return;
+
+      const day = Math.min(r.dayOfMonth || 1, getDaysInMonth(now.getFullYear(), now.getMonth()));
+      const dateKey = `${currentMonth}-${String(day).padStart(2, '0')}`;
+      const split = calculateSplit(r.splitType, r.splitPercent, r.amount, data.parents, r.paidBy);
+      const expense = {
+        id: generateId(),
+        date: dateKey,
+        description: r.description,
+        amount: r.amount,
+        paidBy: r.paidBy,
+        split,
+        splitType: r.splitType,
+        splitPercent: r.splitPercent,
+        category: r.category,
+        recurringId: r.id,
+        createdAt: Date.now()
+      };
+      newExpenses.push(expense);
+      const payerName = data.parents.find(p => p.id === r.paidBy)?.name || 'Unknown';
+      newLogs.push({
+        id: generateId(),
+        timestamp: Date.now(),
+        text: `Recurring expense auto-added: ${r.description} ($${r.amount.toFixed(2)}) paid by ${payerName} [${r.category}]`,
+        author: 'system',
+        type: 'expense'
+      });
+    });
+
+    if (newExpenses.length > 0) {
+      updateData({
+        expenses: [...newExpenses, ...data.expenses],
+        log: [...newLogs, ...data.log],
+        lastRecurringCheck: currentMonth
+      });
+    } else {
+      updateData({ lastRecurringCheck: currentMonth });
+    }
+  }, []);
+
+  const addExpense = () => {
+    if (!desc.trim() || !amount || isNaN(parseFloat(amount))) return;
+    const amt = parseFloat(parseFloat(amount).toFixed(2));
+    const split = calculateSplit(splitType, splitPercent, amt, data.parents, paidBy);
+
+    const expense = {
+      id: generateId(),
+      date: expenseDate,
+      description: desc.trim(),
+      amount: amt,
+      paidBy,
+      split,
+      splitType,
+      splitPercent: splitType === 'custom' ? splitPercent : undefined,
+      category,
+      createdAt: Date.now()
+    };
+
+    const payerName = data.parents.find(p => p.id === paidBy)?.name || 'Unknown';
+    const logEntry = {
+      id: generateId(),
+      timestamp: Date.now(),
+      text: `Expense added: ${desc.trim()} ($${amt.toFixed(2)}) paid by ${payerName} [${category}] - ${splitLabel(expense)}`,
+      author: 'system',
+      type: 'expense'
+    };
+
+    const updates = {
+      expenses: [expense, ...data.expenses],
+      log: [logEntry, ...data.log]
+    };
+
+    // If marked as recurring, also create a recurring template
+    if (isRecurring) {
+      const recurring = {
+        id: generateId(),
+        description: desc.trim(),
+        amount: amt,
+        paidBy,
+        splitType,
+        splitPercent: splitType === 'custom' ? splitPercent : undefined,
+        category,
+        dayOfMonth: recurringDay,
+        active: true,
+        createdAt: Date.now()
+      };
+      updates.recurringExpenses = [...(data.recurringExpenses || []), recurring];
+      expense.recurringId = recurring.id;
+    }
+
+    updateData(updates);
+    setDesc(''); setAmount(''); setShowForm(false); setIsRecurring(false);
+  };
+
+  const deleteExpense = (id) => {
+    updateData({ expenses: data.expenses.filter(e => e.id !== id) });
+  };
+
+  const toggleRecurringActive = (id) => {
+    updateData({
+      recurringExpenses: (data.recurringExpenses || []).map(r =>
+        r.id === id ? { ...r, active: !r.active } : r
+      )
+    });
+  };
+
+  const deleteRecurring = (id) => {
+    updateData({
+      recurringExpenses: (data.recurringExpenses || []).filter(r => r.id !== id)
+    });
+  };
+
+  // Calculate balances
+  const balances = useMemo(() => {
+    const bal = {};
+    data.parents.forEach(p => bal[p.id] = 0);
+    data.expenses.forEach(exp => {
+      bal[exp.paidBy] = (bal[exp.paidBy] || 0) + exp.amount;
+      Object.entries(exp.split || {}).forEach(([pid, share]) => {
+        bal[pid] = (bal[pid] || 0) - share;
+      });
+    });
+    return bal;
+  }, [data.expenses, data.parents]);
+
+  // Settlement
+  const settlement = useMemo(() => {
+    const entries = Object.entries(balances).filter(([_, v]) => Math.abs(v) > 0.01);
+    if (entries.length < 2) return null;
+    const [id1, bal1] = entries[0];
+    const [id2, bal2] = entries[1];
+    if (bal1 > 0.01) {
+      return { from: id2, to: id1, amount: Math.abs(bal1) };
+    } else if (bal2 > 0.01) {
+      return { from: id1, to: id2, amount: Math.abs(bal2) };
+    }
+    return null;
+  }, [balances]);
+
+  const splitBtnClass = (type) => `flex-1 py-2 text-sm rounded-lg border ${
+    splitType === type
+      ? 'bg-brand-100 dark:bg-brand-900/40 border-brand-300 dark:border-brand-700 text-brand-700 dark:text-brand-300'
+      : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400'
+  }`;
+
+  const recurringExpenses = data.recurringExpenses || [];
+
+  return (
+    <div className="fade-in space-y-4">
+      {/* Settlement banner */}
+      {settlement && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+          <div className="text-sm font-medium text-amber-800 dark:text-amber-200">
+            {data.parents.find(p => p.id === settlement.from)?.name} owes{' '}
+            {data.parents.find(p => p.id === settlement.to)?.name}{' '}
+            <span className="text-lg font-bold">{formatCurrency(settlement.amount)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Category breakdown */}
+      {data.expenses.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">By Category</h3>
+          <div className="space-y-1">
+            {Object.entries(
+              data.expenses.reduce((acc, e) => {
+                acc[e.category] = (acc[e.category] || 0) + e.amount;
+                return acc;
+              }, {})
+            ).sort((a, b) => b[1] - a[1]).map(([cat, total]) => (
+              <div key={cat} className="flex justify-between text-sm">
+                <span className="text-gray-600 dark:text-gray-400">{cat}</span>
+                <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(total)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Action buttons */}
+      {!showForm && (
+        <div className="flex gap-2">
+          <button onClick={() => setShowForm(true)}
+            className="flex-1 py-3 bg-brand-600 text-white rounded-xl font-medium hover:bg-brand-700 transition-colors">
+            + Add Expense
+          </button>
+          {recurringExpenses.length > 0 && (
+            <button onClick={() => setShowRecurring(!showRecurring)}
+              className={`py-3 px-4 rounded-xl font-medium transition-colors border ${
+                showRecurring
+                  ? 'bg-brand-50 dark:bg-brand-900/30 border-brand-300 dark:border-brand-700 text-brand-700 dark:text-brand-300'
+                  : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
+              }`}>
+              🔄 {recurringExpenses.filter(r => r.active !== false).length}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Add expense form */}
+      {showForm && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 slide-in space-y-3">
+          <h3 className="font-semibold text-gray-900 dark:text-white">New Expense</h3>
+          <input type="text" placeholder="What was it for?" value={desc} onChange={e => setDesc(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-brand-500 outline-none" />
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <input type="number" step="0.01" min="0" placeholder="Amount" value={amount} onChange={e => setAmount(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-brand-500 outline-none" />
+            </div>
+            <input type="date" value={expenseDate} onChange={e => setExpenseDate(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-brand-500 outline-none" />
+          </div>
+          <div className="flex gap-2">
+            <select value={paidBy} onChange={e => setPaidBy(e.target.value)}
+              className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+              {data.parents.map(p => <option key={p.id} value={p.id}>{p.name} paid</option>)}
+            </select>
+            <select value={category} onChange={e => setCategory(e.target.value)}
+              className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+              {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          {/* Split type selector - now with 3 options */}
+          <div className="flex gap-2">
+            <button onClick={() => setSplitType('50-50')} className={splitBtnClass('50-50')}>50/50</button>
+            <button onClick={() => setSplitType('custom')} className={splitBtnClass('custom')}>Custom %</button>
+            <button onClick={() => setSplitType('full')} className={splitBtnClass('full')}>Payer Covers All</button>
+          </div>
+
+          {/* Custom split percentage control */}
+          {splitType === 'custom' && (
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 space-y-2">
+              <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400">
+                <span>{data.parents[0]?.name}: {splitPercent}%</span>
+                <span>{data.parents[1]?.name}: {100 - splitPercent}%</span>
+              </div>
+              <input type="range" min="0" max="100" step="5" value={splitPercent}
+                onChange={e => setSplitPercent(parseInt(e.target.value))}
+                className="w-full accent-brand-600" />
+              <div className="flex gap-1 justify-center flex-wrap">
+                {[50, 60, 70, 75, 80].map(pct => (
+                  <button key={pct} onClick={() => setSplitPercent(pct)}
+                    className={`px-2 py-1 text-xs rounded ${
+                      splitPercent === pct
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
+                    }`}>
+                    {pct}/{100 - pct}
+                  </button>
+                ))}
+              </div>
+              {amount && !isNaN(parseFloat(amount)) && (
+                <div className="flex justify-between text-xs font-medium text-gray-700 dark:text-gray-300 pt-1 border-t border-gray-200 dark:border-gray-600">
+                  <span>{data.parents[0]?.name}: {formatCurrency(parseFloat(amount) * splitPercent / 100)}</span>
+                  <span>{data.parents[1]?.name}: {formatCurrency(parseFloat(amount) * (100 - splitPercent) / 100)}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Recurring toggle */}
+          <div className="flex items-center gap-3">
+            <button onClick={() => setIsRecurring(!isRecurring)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors ${
+                isRecurring
+                  ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700 text-green-700 dark:text-green-300'
+                  : 'border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400'
+              }`}>
+              🔄 Repeat monthly
+            </button>
+            {isRecurring && (
+              <div className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400">
+                <span>on day</span>
+                <input type="number" min="1" max="28" value={recurringDay}
+                  onChange={e => setRecurringDay(Math.max(1, Math.min(28, parseInt(e.target.value) || 1)))}
+                  className="w-14 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm text-center" />
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            <button onClick={addExpense}
+              className="flex-1 py-2 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 text-sm">
+              {isRecurring ? 'Add + Set Recurring' : 'Add'}
+            </button>
+            <button onClick={() => { setShowForm(false); setIsRecurring(false); }}
+              className="flex-1 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg text-sm">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Recurring expenses panel */}
+      {showRecurring && recurringExpenses.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 slide-in">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">🔄 Recurring Expenses</h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            These are automatically added at the start of each month.
+          </p>
+          <div className="space-y-2">
+            {recurringExpenses.map(r => {
+              const payer = data.parents.find(p => p.id === r.paidBy);
+              const inactive = r.active === false;
+              return (
+                <div key={r.id} className={`flex items-center gap-3 p-2 rounded-lg ${inactive ? 'opacity-50' : ''}`}>
+                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: payer?.color || '#999' }}></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-gray-900 dark:text-white truncate">{r.description}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      {formatCurrency(r.amount)} on day {r.dayOfMonth} - {r.category}
+                      {r.splitType === 'custom' ? ` - ${r.splitPercent}/${100 - r.splitPercent}` : r.splitType === '50-50' ? ' - 50/50' : ' - Full'}
+                    </div>
+                  </div>
+                  <button onClick={() => toggleRecurringActive(r.id)}
+                    className={`text-xs px-2 py-1 rounded ${inactive ? 'bg-gray-200 dark:bg-gray-700 text-gray-500' : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'}`}>
+                    {inactive ? 'Paused' : 'Active'}
+                  </button>
+                  <button onClick={() => deleteRecurring(r.id)}
+                    className="text-gray-400 hover:text-red-500 transition-colors text-lg">×</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Expense list */}
+      {data.expenses.length === 0 ? (
+        <div className="text-center py-8 text-gray-400 dark:text-gray-600">
+          <p className="text-3xl mb-2">💰</p>
+          <p className="text-sm">No expenses yet. Add one to start tracking.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {data.expenses.map(exp => {
+            const payer = data.parents.find(p => p.id === exp.paidBy);
+            return (
+              <div key={exp.id} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 flex items-center gap-3">
+                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: payer?.color || '#999' }}></div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    {exp.recurringId && <span className="mr-1" title="Recurring">🔄</span>}
+                    {exp.description}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    {formatDate(exp.date)} &middot; {payer?.name} &middot; {exp.category} &middot; {splitLabel(exp)}
+                  </div>
+                </div>
+                <div className="text-sm font-semibold text-gray-900 dark:text-white">{formatCurrency(exp.amount)}</div>
+                <button onClick={() => deleteExpense(exp.id)}
+                  className="text-gray-400 hover:text-red-500 transition-colors text-lg">&times;</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ============ LOG TAB ============
+function LogTab({ data, updateData }) {
+  const [text, setText] = useState('');
+  const [author, setAuthor] = useState(data.parents[0]?.id || '');
+
+  const addEntry = () => {
+    if (!text.trim()) return;
+    const entry = {
+      id: generateId(),
+      timestamp: Date.now(),
+      text: text.trim(),
+      author,
+      type: 'manual'
+    };
+    updateData({ log: [entry, ...data.log] });
+    setText('');
+  };
+
+  const deleteEntry = (id) => {
+    updateData({ log: data.log.filter(e => e.id !== id) });
+  };
+
+  const exportLog = () => {
+    const lines = data.log.map(e => {
+      const authorName = e.author === 'system' ? '[System]' :
+        (data.parents.find(p => p.id === e.author)?.name || 'Unknown');
+      return `[${formatTimestamp(e.timestamp)}] ${authorName}: ${e.text}`;
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `coparent-log-${toDateKey(new Date())}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="fade-in space-y-4">
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3">
+        <p className="text-xs text-blue-700 dark:text-blue-300">
+          All entries are timestamped and can be exported as a text file. Useful for keeping a record of agreements, handoff notes, and shared decisions.
+        </p>
+      </div>
+
+      {/* Add entry */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+        <textarea rows="2" placeholder="Add a note, agreement, or handoff detail..." value={text} onChange={e => setText(e.target.value)}
+          className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-brand-500 outline-none resize-none"
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addEntry(); } }} />
+        <div className="flex gap-2">
+          <select value={author} onChange={e => setAuthor(e.target.value)}
+            className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+            {data.parents.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <button onClick={addEntry}
+            className="px-4 py-2 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 text-sm">
+            Add
+          </button>
+        </div>
+      </div>
+
+      {/* Export */}
+      {data.log.length > 0 && (
+        <button onClick={exportLog}
+          className="w-full py-2 text-sm text-brand-600 dark:text-brand-400 font-medium hover:underline">
+          Export Log as Text File ({data.log.length} entries)
+        </button>
+      )}
+
+      {/* Log entries */}
+      {data.log.length === 0 ? (
+        <div className="text-center py-8 text-gray-400 dark:text-gray-600">
+          <p className="text-3xl mb-2">📝</p>
+          <p className="text-sm">No entries yet. Start keeping a record.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {data.log.map(entry => {
+            const isSystem = entry.author === 'system';
+            const authorParent = data.parents.find(p => p.id === entry.author);
+            return (
+              <div key={entry.id}
+                className={`rounded-xl border p-3 ${
+                  isSystem
+                    ? 'bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
+                    : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+                }`}>
+                <div className="flex items-start gap-2">
+                  {authorParent && (
+                    <div className="w-3 h-3 rounded-full flex-shrink-0 mt-1" style={{ backgroundColor: authorParent.color }}></div>
+                  )}
+                  {isSystem && (
+                    <span className="text-xs text-gray-400 mt-0.5">auto</span>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-900 dark:text-white">{entry.text}</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                      {formatTimestamp(entry.timestamp)}
+                      {authorParent && ` - ${authorParent.name}`}
+                    </p>
+                  </div>
+                  {!isSystem && (
+                    <button onClick={() => deleteEntry(entry.id)}
+                      className="text-gray-400 hover:text-red-500 transition-colors text-lg flex-shrink-0">×</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ============ SETTINGS TAB ============
+function SettingsTab({ data, setData, updateData, settings, setSettings }) {
+  const [editingParent, setEditingParent] = useState(null);
+  const [parentName, setParentName] = useState('');
+  const [parentColor, setParentColor] = useState('#7c3aed');
+  const [childName, setChildName] = useState('');
+  const [showImport, setShowImport] = useState(false);
+  const fileRef = useRef();
+
+  const PARENT_COLORS = ['#7c3aed', '#f59e0b', '#3b82f6', '#ef4444', '#10b981', '#ec4899', '#f97316', '#14b8a6'];
+
+  const startEditParent = (parent) => {
+    setEditingParent(parent.id);
+    setParentName(parent.name);
+    setParentColor(parent.color);
+  };
+
+  const saveParent = () => {
+    if (!parentName.trim()) return;
+    if (editingParent) {
+      updateData({
+        parents: data.parents.map(p =>
+          p.id === editingParent ? { ...p, name: parentName.trim(), color: parentColor } : p
+        )
+      });
+    }
+    setEditingParent(null);
+    setParentName('');
+  };
+
+  const addChild = () => {
+    if (!childName.trim()) return;
+    const child = { id: generateId(), name: childName.trim() };
+    updateData({ children: [...data.children, child] });
+    setChildName('');
+  };
+
+  const removeChild = (id) => {
+    updateData({ children: data.children.filter(c => c.id !== id) });
+  };
+
+  const exportData = () => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `coparent-simple-backup-${toDateKey(new Date())}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importData = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const imported = JSON.parse(ev.target.result);
+        if (imported.parents && imported.schedule) {
+          setData(imported);
+          setShowImport(false);
+        } else {
+          alert('Invalid backup file. Missing required fields.');
+        }
+      } catch {
+        alert('Could not parse backup file.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const clearAll = () => {
+    if (confirm('This will delete ALL data including schedule, expenses, and log entries. This cannot be undone. Continue?')) {
+      setData(defaultData());
+    }
+  };
+
+  return (
+    <div className="fade-in space-y-4">
+      {/* Parents */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Parents</h3>
+        <div className="space-y-2">
+          {data.parents.map(p => (
+            <div key={p.id}>
+              {editingParent === p.id ? (
+                <div className="space-y-2 p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                  <input type="text" value={parentName} onChange={e => setParentName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-brand-500 outline-none" />
+                  <div className="flex gap-1 flex-wrap">
+                    {PARENT_COLORS.map(c => (
+                      <button key={c} onClick={() => setParentColor(c)}
+                        className={`w-8 h-8 rounded-full border-2 ${parentColor === c ? 'border-gray-900 dark:border-white' : 'border-transparent'}`}
+                        style={{ backgroundColor: c }}></button>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={saveParent} className="px-3 py-1.5 bg-brand-600 text-white rounded-lg text-sm">Save</button>
+                    <button onClick={() => setEditingParent(null)} className="px-3 py-1.5 text-gray-600 dark:text-gray-400 text-sm">Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 p-2">
+                  <div className="w-4 h-4 rounded-full" style={{ backgroundColor: p.color }}></div>
+                  <span className="text-sm text-gray-900 dark:text-white flex-1">{p.name}</span>
+                  <button onClick={() => startEditParent(p)} className="text-xs text-brand-600 dark:text-brand-400 hover:underline">Edit</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Children */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Children</h3>
+        {data.children.length > 0 && (
+          <div className="space-y-1 mb-3">
+            {data.children.map(c => (
+              <div key={c.id} className="flex items-center gap-2 p-2">
+                <span className="text-sm text-gray-900 dark:text-white flex-1">{c.name}</span>
+                <button onClick={() => removeChild(c.id)} className="text-gray-400 hover:text-red-500 text-lg">×</button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <input type="text" placeholder="Child's name" value={childName} onChange={e => setChildName(e.target.value)}
+            className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-brand-500 outline-none"
+            onKeyDown={e => { if (e.key === 'Enter') addChild(); }} />
+          <button onClick={addChild} className="px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium">Add</button>
+        </div>
+      </div>
+
+      {/* Data management */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Data</h3>
+
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={exportData}
+            className="py-2 px-3 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">
+            Export Backup
+          </button>
+          <button onClick={() => fileRef.current?.click()}
+            className="py-2 px-3 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">
+            Import Backup
+          </button>
+          <input type="file" ref={fileRef} accept=".json" onChange={importData} className="hidden" />
+        </div>
+
+        <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+          <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+            <p>{data.expenses.length} expenses tracked</p>
+            <p>{data.log.length} log entries</p>
+            <p>{Object.keys(data.schedule).length} scheduled days</p>
+          </div>
+        </div>
+
+        <button onClick={clearAll}
+          className="w-full py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg">
+          Clear All Data
+        </button>
+      </div>
+
+      {/* About */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">About</h3>
+        <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+          CoParent Simple is a free, private co-parenting coordination tool. Your data never leaves your browser. There are no accounts, no ads, and no subscriptions. Export your data anytime as a JSON backup or export the activity log as a timestamped text file.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ---- Mount ----
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

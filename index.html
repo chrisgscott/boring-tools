@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Boring Tools - Free, private, zero-signup productivity tools</title>
+  <meta name="description" content="A collection of free, private, single-file productivity tools that run entirely in your browser. No accounts, no servers, no tracking. Just tools that work.">
+  <meta name="keywords" content="free tools, privacy tools, browser tools, no signup, subscription tracker, habit tracker, medication tracker, reminder app">
+  <meta property="og:title" content="Boring Tools - Free, private, zero-signup productivity tools">
+  <meta property="og:description" content="Free productivity tools that run entirely in your browser. No accounts, no servers, no tracking.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔧</text></svg>">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f7ff',
+              100: '#e0effe',
+              200: '#b9dffd',
+              300: '#7cc5fc',
+              400: '#36a8f8',
+              500: '#0c8de9',
+              600: '#006fc7',
+              700: '#0059a2',
+              800: '#054c85',
+              900: '#0a406f',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .tool-card { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+    .tool-card:hover { transform: translateY(-4px); }
+    .gradient-text {
+      background: linear-gradient(135deg, #0c8de9 0%, #36a8f8 50%, #7cc5fc 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .dark .gradient-text {
+      background: linear-gradient(135deg, #36a8f8 0%, #7cc5fc 50%, #b9dffd 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+  </style>
+</head>
+<body class="bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 min-h-screen">
+
+  <!-- Nav -->
+  <nav class="fixed top-0 w-full bg-white/80 dark:bg-gray-950/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 z-50">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+      <a href="#" class="flex items-center gap-2 text-lg font-bold">
+        <span class="text-2xl">🔧</span>
+        <span class="gradient-text">Boring Tools</span>
+      </a>
+      <div class="flex items-center gap-4">
+        <a href="#tools" class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">Tools</a>
+        <a href="#philosophy" class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">Why</a>
+        <button id="themeToggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400">
+          <svg id="sunIcon" class="w-5 h-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <svg id="moonIcon" class="w-5 h-5 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="pt-32 pb-16 px-6">
+    <div class="max-w-3xl mx-auto text-center">
+      <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight mb-6">
+        Tools that just <span class="gradient-text">work</span>.
+      </h1>
+      <p class="text-lg sm:text-xl text-gray-600 dark:text-gray-400 mb-4 max-w-2xl mx-auto">
+        Free productivity tools that run entirely in your browser. No accounts. No servers. No tracking. Your data stays on your device.
+      </p>
+      <p class="text-sm text-gray-500 dark:text-gray-500 mb-8">
+        Each tool is a single file. Open it, use it, close it. That's it.
+      </p>
+      <a href="#tools" class="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white px-6 py-3 rounded-lg font-medium transition-colors">
+        Browse Tools
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+      </a>
+    </div>
+  </section>
+
+  <!-- Trust Signals -->
+  <section class="pb-16 px-6">
+    <div class="max-w-4xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
+      <div class="p-4">
+        <div class="text-2xl font-bold text-brand-600 dark:text-brand-400">0</div>
+        <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">Accounts required</div>
+      </div>
+      <div class="p-4">
+        <div class="text-2xl font-bold text-brand-600 dark:text-brand-400">0</div>
+        <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">Data sent to servers</div>
+      </div>
+      <div class="p-4">
+        <div class="text-2xl font-bold text-brand-600 dark:text-brand-400">100%</div>
+        <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">Runs in your browser</div>
+      </div>
+      <div class="p-4">
+        <div class="text-2xl font-bold text-brand-600 dark:text-brand-400">Free</div>
+        <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">Forever</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tools -->
+  <section id="tools" class="py-16 px-6 bg-gray-50 dark:bg-gray-900/50">
+    <div class="max-w-5xl mx-auto">
+      <h2 class="text-2xl font-bold text-center mb-12">The Tools</h2>
+      <div class="grid md:grid-cols-2 gap-8">
+
+        <!-- SubTrack Lite -->
+        <div class="tool-card bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm hover:shadow-lg">
+          <div class="p-1.5 bg-gradient-to-r from-emerald-500 to-teal-500"></div>
+          <div class="p-6">
+            <div class="flex items-start justify-between mb-4">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-2xl">💰</span>
+                  <h3 class="text-xl font-bold">SubTrack Lite</h3>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Subscription tracker</p>
+              </div>
+              <span class="text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-2 py-1 rounded-full font-medium">Finance</span>
+            </div>
+            <p class="text-gray-600 dark:text-gray-300 text-sm mb-4">
+              Track every subscription and recurring payment in one place. See monthly and annual totals, get renewal countdown alerts, and export your data. Find hidden costs you forgot about.
+            </p>
+            <div class="flex flex-wrap gap-2 mb-5">
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">8 currencies</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">Cost breakdown</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">CSV export</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">Dark mode</span>
+            </div>
+            <a href="tools/subtrack-lite/index.html" class="inline-flex items-center gap-2 text-brand-600 dark:text-brand-400 font-medium text-sm hover:underline">
+              Open SubTrack Lite
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+            </a>
+          </div>
+        </div>
+
+        <!-- MediTrack Simple -->
+        <div class="tool-card bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm hover:shadow-lg">
+          <div class="p-1.5 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
+          <div class="p-6">
+            <div class="flex items-start justify-between mb-4">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-2xl">💊</span>
+                  <h3 class="text-xl font-bold">MediTrack Simple</h3>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Medication tracker</p>
+              </div>
+              <span class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-1 rounded-full font-medium">Health</span>
+            </div>
+            <p class="text-gray-600 dark:text-gray-300 text-sm mb-4">
+              Track daily medications, mark doses as taken, and monitor adherence streaks. Includes inventory tracking with low-stock warnings and PDF adherence reports you can share with your doctor.
+            </p>
+            <div class="flex flex-wrap gap-2 mb-5">
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">5 frequencies</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">Inventory alerts</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">PDF reports</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">PWA</span>
+            </div>
+            <a href="tools/meditrack-simple/index.html" class="inline-flex items-center gap-2 text-brand-600 dark:text-brand-400 font-medium text-sm hover:underline">
+              Open MediTrack Simple
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+            </a>
+          </div>
+        </div>
+
+        <!-- HabitFlow -->
+        <div class="tool-card bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm hover:shadow-lg">
+          <div class="p-1.5 bg-gradient-to-r from-violet-500 to-purple-500"></div>
+          <div class="p-6">
+            <div class="flex items-start justify-between mb-4">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-2xl">📊</span>
+                  <h3 class="text-xl font-bold">HabitFlow</h3>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Daily habit tracker</p>
+              </div>
+              <span class="text-xs bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 px-2 py-1 rounded-full font-medium">Productivity</span>
+            </div>
+            <p class="text-gray-600 dark:text-gray-300 text-sm mb-4">
+              Build better habits with streak tracking, completion heatmaps, and flexible scheduling. Supports daily, weekday, weekend, and custom day-of-week frequencies. See patterns at a glance.
+            </p>
+            <div class="flex flex-wrap gap-2 mb-5">
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">Streak tracking</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">Heatmaps</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">Custom schedules</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">PWA</span>
+            </div>
+            <a href="tools/habitflow/index.html" class="inline-flex items-center gap-2 text-brand-600 dark:text-brand-400 font-medium text-sm hover:underline">
+              Open HabitFlow
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+            </a>
+          </div>
+        </div>
+
+        <!-- NagReminder -->
+        <div class="tool-card bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm hover:shadow-lg">
+          <div class="p-1.5 bg-gradient-to-r from-orange-500 to-red-500"></div>
+          <div class="p-6">
+            <div class="flex items-start justify-between mb-4">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-2xl">🔔</span>
+                  <h3 class="text-xl font-bold">NagReminder</h3>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Persistent reminders</p>
+              </div>
+              <span class="text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-2 py-1 rounded-full font-medium">Productivity</span>
+            </div>
+            <p class="text-gray-600 dark:text-gray-300 text-sm mb-4">
+              A reminder app that actually nags you. Set a task and a deadline, pick an intensity level, and get persistent browser notifications until you're done. Auto-escalation mode increases urgency over time.
+            </p>
+            <div class="flex flex-wrap gap-2 mb-5">
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">4 nag levels</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">Auto-escalation</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">Smart snooze</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">Notifications</span>
+            </div>
+            <a href="tools/nagreminder/index.html" class="inline-flex items-center gap-2 text-brand-600 dark:text-brand-400 font-medium text-sm hover:underline">
+              Open NagReminder
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+            </a>
+          </div>
+        </div>
+
+        <!-- SplitSimple -->
+        <div class="tool-card bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm hover:shadow-lg">
+          <div class="p-1.5 bg-gradient-to-r from-cyan-500 to-blue-500"></div>
+          <div class="p-6">
+            <div class="flex items-start justify-between mb-4">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-2xl">💸</span>
+                  <h3 class="text-xl font-bold">SplitSimple</h3>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Expense splitter</p>
+              </div>
+              <span class="text-xs bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400 px-2 py-1 rounded-full font-medium">Finance</span>
+            </div>
+            <p class="text-gray-600 dark:text-gray-300 text-sm mb-4">
+              Split expenses with friends, roommates, or travel groups. Create groups, add expenses with equal, custom, or percentage splits, and see the minimum payments to settle up. No Splitwise subscription needed.
+            </p>
+            <div class="flex flex-wrap gap-2 mb-5">
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">3 split modes</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">Min-payment solver</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">Export settlements</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">PWA</span>
+            </div>
+            <a href="tools/splitsimple/index.html" class="inline-flex items-center gap-2 text-brand-600 dark:text-brand-400 font-medium text-sm hover:underline">
+              Open SplitSimple
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+            </a>
+          </div>
+        </div>
+
+        <!-- CoParent Simple -->
+        <div class="tool-card bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm hover:shadow-lg">
+          <div class="p-1.5 bg-gradient-to-r from-violet-500 to-fuchsia-500"></div>
+          <div class="p-6">
+            <div class="flex items-start justify-between mb-4">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-2xl">👨‍👩‍👧</span>
+                  <h3 class="text-xl font-bold">CoParent Simple</h3>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Co-parenting coordination</p>
+              </div>
+              <span class="text-xs bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-400 px-2 py-1 rounded-full font-medium">Family</span>
+            </div>
+            <p class="text-gray-600 dark:text-gray-300 text-sm mb-4">
+              Custody calendar, shared expense tracking, and activity log for co-parents. Four schedule patterns (alternating weeks, 2-2-3, 3-4-4-3, every other weekend) with per-day overrides. Running balance shows who owes whom.
+            </p>
+            <div class="flex flex-wrap gap-2 mb-5">
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">4 schedule patterns</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">Expense splits</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">Activity log</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">PWA</span>
+            </div>
+            <a href="tools/coparent-simple/index.html" class="inline-flex items-center gap-2 text-brand-600 dark:text-brand-400 font-medium text-sm hover:underline">
+              Open CoParent Simple
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+            </a>
+          </div>
+        </div>
+
+        <!-- PurePlant -->
+        <div class="tool-card bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm hover:shadow-lg">
+          <div class="p-1.5 bg-gradient-to-r from-green-500 to-emerald-500"></div>
+          <div class="p-6">
+            <div class="flex items-start justify-between mb-4">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-2xl">🌿</span>
+                  <h3 class="text-xl font-bold">PurePlant</h3>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Plant care tracker</p>
+              </div>
+              <span class="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-1 rounded-full font-medium">Home</span>
+            </div>
+            <p class="text-gray-600 dark:text-gray-300 text-sm mb-4">
+              Track watering schedules for all your plants. Set custom frequencies, log waterings with one tap, and see which plants are overdue at a glance. Sort by urgency, name, or location. No subscription traps like Planta.
+            </p>
+            <div class="flex flex-wrap gap-2 mb-5">
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">Custom schedules</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">Overdue alerts</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">Location tracking</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">PWA</span>
+            </div>
+            <a href="tools/pureplant-scheduler/index.html" class="inline-flex items-center gap-2 text-brand-600 dark:text-brand-400 font-medium text-sm hover:underline">
+              Open PurePlant
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+            </a>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Philosophy -->
+  <section id="philosophy" class="py-16 px-6">
+    <div class="max-w-3xl mx-auto">
+      <h2 class="text-2xl font-bold text-center mb-8">Why "boring"?</h2>
+      <div class="space-y-6 text-gray-600 dark:text-gray-300">
+        <p>
+          Most productivity apps want your email, your credit card, and a monthly subscription. They need servers, databases, and analytics pipelines. They track what you do, when you do it, and how often you come back.
+        </p>
+        <p>
+          These tools don't do any of that. Each one is a single HTML file that runs in your browser. Your data lives in localStorage on your device. Nothing is sent anywhere. There are no accounts to create, no passwords to remember, no subscriptions to cancel.
+        </p>
+        <p>
+          That's boring. On purpose.
+        </p>
+        <p>
+          "Boring" means the tool does what it says and nothing else. No growth hacks, no engagement loops, no dark patterns. Just a thing that solves a problem and gets out of your way.
+        </p>
+      </div>
+
+      <!-- Architecture Details -->
+      <div class="mt-12 grid sm:grid-cols-3 gap-6">
+        <div class="p-5 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800">
+          <div class="text-lg mb-2">📁</div>
+          <h3 class="font-semibold text-sm mb-2">Single file</h3>
+          <p class="text-xs text-gray-500 dark:text-gray-400">Each tool is one HTML file. No build step, no node_modules, no deploy pipeline. Right-click, save, open in a browser.</p>
+        </div>
+        <div class="p-5 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800">
+          <div class="text-lg mb-2">🔒</div>
+          <h3 class="font-semibold text-sm mb-2">Your data, your device</h3>
+          <p class="text-xs text-gray-500 dark:text-gray-400">Everything stays in localStorage. No cloud sync, no analytics, no third-party tracking. Close the tab, your data is still there when you come back.</p>
+        </div>
+        <div class="p-5 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800">
+          <div class="text-lg mb-2">📱</div>
+          <h3 class="font-semibold text-sm mb-2">Works everywhere</h3>
+          <p class="text-xs text-gray-500 dark:text-gray-400">Desktop, tablet, phone. Any modern browser. Some tools support PWA install so you can add them to your home screen and use them offline.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="py-16 px-6 bg-gray-50 dark:bg-gray-900/50">
+    <div class="max-w-3xl mx-auto">
+      <h2 class="text-2xl font-bold text-center mb-8">Common Questions</h2>
+      <div class="space-y-6">
+        <div>
+          <h3 class="font-semibold mb-2">What happens if I clear my browser data?</h3>
+          <p class="text-sm text-gray-600 dark:text-gray-400">Your data will be gone. Each tool has a JSON export/backup feature. Use it periodically if your data matters to you.</p>
+        </div>
+        <div>
+          <h3 class="font-semibold mb-2">Can I use these on my phone?</h3>
+          <p class="text-sm text-gray-600 dark:text-gray-400">Yes. Open the tool in your phone's browser. HabitFlow, MediTrack Simple, SplitSimple, CoParent Simple, and PurePlant support "Add to Home Screen" for an app-like experience. All tools are responsive.</p>
+        </div>
+        <div>
+          <h3 class="font-semibold mb-2">Will there be a paid version?</h3>
+          <p class="text-sm text-gray-600 dark:text-gray-400">These tools are free. If premium features appear in the future (cloud sync, notifications, PDF reports), the core tools will stay free.</p>
+        </div>
+        <div>
+          <h3 class="font-semibold mb-2">Can I self-host these?</h3>
+          <p class="text-sm text-gray-600 dark:text-gray-400">Absolutely. Each tool is a static file. Drop it on any web server, CDN, or just open it from your filesystem. No server-side requirements.</p>
+        </div>
+        <div>
+          <h3 class="font-semibold mb-2">How do I move my data between devices?</h3>
+          <p class="text-sm text-gray-600 dark:text-gray-400">Export your data as JSON from one device, import it on the other. Manual, but deliberate. No cloud sync means no cloud risk.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="py-8 px-6 border-t border-gray-200 dark:border-gray-800">
+    <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+        <span>🔧</span>
+        <span>Boring Tools</span>
+        <span class="mx-2">-</span>
+        <span>Free, private, zero-signup.</span>
+      </div>
+      <div class="text-xs text-gray-400 dark:text-gray-600">
+        Built with one HTML file each. Hosted on static infrastructure. No cookies, no tracking.
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Dark mode toggle
+    const toggle = document.getElementById('themeToggle');
+    const html = document.documentElement;
+
+    // Check saved preference or system preference
+    if (localStorage.getItem('bt-theme') === 'dark' ||
+        (!localStorage.getItem('bt-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      html.classList.add('dark');
+    }
+
+    toggle.addEventListener('click', () => {
+      html.classList.toggle('dark');
+      localStorage.setItem('bt-theme', html.classList.contains('dark') ? 'dark' : 'light');
+    });
+
+    // Smooth scroll for anchor links
+    document.querySelectorAll('a[href^="#"]').forEach(a => {
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        const target = document.querySelector(a.getAttribute('href'));
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  </script>
+</body>
+</html>

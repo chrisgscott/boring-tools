@@ -1,0 +1,16 @@
+{
+  "name": "SplitSimple - Clean Expense Splitter",
+  "short_name": "SplitSimple",
+  "description": "Split expenses with friends. No ads, no accounts, no limits.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f9fafb",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💸</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

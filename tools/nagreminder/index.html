@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NagReminder — It Won't Stop Until You Do</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            nag: {
+              50:  '#fff7ed',
+              100: '#ffedd5',
+              200: '#fed7aa',
+              300: '#fdba74',
+              400: '#fb923c',
+              500: '#f97316',
+              600: '#ea580c',
+              700: '#c2410c',
+              800: '#9a3412',
+              900: '#7c2d12',
+            }
+          },
+          animation: {
+            'pulse-fast': 'pulse 0.8s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'shake': 'shake 0.5s ease-in-out infinite',
+            'wiggle': 'wiggle 0.3s ease-in-out infinite',
+          },
+          keyframes: {
+            shake: {
+              '0%, 100%': { transform: 'translateX(0)' },
+              '10%, 30%, 50%, 70%, 90%': { transform: 'translateX(-4px)' },
+              '20%, 40%, 60%, 80%': { transform: 'translateX(4px)' },
+            },
+            wiggle: {
+              '0%, 100%': { transform: 'rotate(-3deg)' },
+              '50%': { transform: 'rotate(3deg)' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    * { font-family: 'Inter', sans-serif; }
+    body { background: #0f0f0f; }
+    .nag-card { transition: all 0.2s ease; }
+    .nag-card:hover { transform: translateY(-1px); }
+    .progress-bar { transition: width 0.5s ease; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1a1a1a; }
+    ::-webkit-scrollbar-thumb { background: #ea580c; border-radius: 3px; }
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator { filter: invert(0.8); }
+    .pulse-ring {
+      animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+    }
+    @keyframes pulse-ring {
+      0% { transform: scale(0.8); opacity: 0.8; }
+      80%, 100% { transform: scale(1.4); opacity: 0; }
+    }
+  </style>
+</head>
+<body class="min-h-screen text-white">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ---- Constants ----
+const NAG_LEVELS = {
+  chill:      { label: 'Chill',      emoji: '😌', color: 'text-blue-400',   interval: 30 },
+  normal:     { label: 'Normal',     emoji: '😐', color: 'text-yellow-400', interval: 15 },
+  aggressive: { label: 'Aggressive', emoji: '😤', color: 'text-orange-400', interval:  5 },
+  relentless: { label: 'Relentless', emoji: '🔥', color: 'text-red-400',    interval:  2 },
+};
+
+const NAG_MESSAGES = {
+  chill:      ["Hey, just a gentle reminder...", "No rush, but did you forget something?", "Whenever you're ready... (we can wait)", "Still here. Still waiting. No biggie."],
+  normal:     ["Don't forget about this!", "This isn't going to do itself.", "Still pending. You know what to do.", "Tick tock."],
+  aggressive: ["HEY. Do this now.", "This has been waiting too long.", "Still not done?! Come on.", "Stop procrastinating. NOW."],
+  relentless: ["DO IT. DO IT NOW.", "WHY IS THIS STILL NOT DONE", "I WILL NOT STOP. YOU KNOW THIS.", "THE TASK. COMPLETE IT. NOW.", "I swear I will keep going forever.", "You made a choice buying this app. FINISH THE TASK."],
+};
+
+const ESCALATION_MESSAGES = {
+  overdue_30:  "Overdue 30+ min",
+  overdue_60:  "Overdue 1+ hour",
+  overdue_120: "Overdue 2+ hours",
+  overdue_240: "Overdue 4+ hours",
+};
+
+const RECURRENCE_TYPES = {
+  none:     { label: 'One-time',    emoji: '1️⃣',  desc: 'Just this once' },
+  daily:    { label: 'Daily',       emoji: '📅', desc: 'Every day' },
+  weekdays: { label: 'Weekdays',    emoji: '💼', desc: 'Mon-Fri' },
+  weekly:   { label: 'Weekly',      emoji: '🔁', desc: 'Same day each week' },
+  custom:   { label: 'Custom days', emoji: '🎯', desc: 'Pick specific days' },
+};
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function randPick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function getNextOccurrence(recurrence, completedAt) {
+  if (!recurrence || recurrence.type === 'none') return null;
+  const now = completedAt ? new Date(completedAt) : new Date();
+  const [hours, minutes] = recurrence.time.split(':').map(Number);
+
+  const candidates = [];
+  // Check up to 8 days ahead to find next valid day
+  for (let i = 1; i <= 8; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + i);
+    d.setHours(hours, minutes, 0, 0);
+    const dayOfWeek = d.getDay();
+
+    if (recurrence.type === 'daily') {
+      candidates.push(d);
+      break;
+    } else if (recurrence.type === 'weekdays') {
+      if (dayOfWeek >= 1 && dayOfWeek <= 5) { candidates.push(d); break; }
+    } else if (recurrence.type === 'weekly') {
+      if (dayOfWeek === recurrence.anchorDay) { candidates.push(d); break; }
+    } else if (recurrence.type === 'custom') {
+      if (recurrence.days.includes(dayOfWeek)) { candidates.push(d); break; }
+    }
+  }
+  return candidates.length > 0 ? candidates[0].toISOString().slice(0, 16) : null;
+}
+
+function formatRecurrence(recurrence) {
+  if (!recurrence || recurrence.type === 'none') return null;
+  const info = RECURRENCE_TYPES[recurrence.type];
+  if (recurrence.type === 'custom' && recurrence.days) {
+    const dayLabels = recurrence.days.map(d => DAY_NAMES[d]).join(', ');
+    return `${info.emoji} ${dayLabels} at ${recurrence.time}`;
+  }
+  return `${info.emoji} ${info.label} at ${recurrence.time}`;
+}
+
+function formatRelativeTime(date) {
+  const now = new Date();
+  const diff = date - now;
+  const absDiff = Math.abs(diff);
+  const mins = Math.floor(absDiff / 60000);
+  const hours = Math.floor(absDiff / 3600000);
+  const days = Math.floor(absDiff / 86400000);
+
+  if (diff > 0) {
+    if (mins < 1) return 'in less than a minute';
+    if (mins < 60) return `in ${mins}m`;
+    if (hours < 24) return `in ${hours}h ${mins % 60}m`;
+    return `in ${days}d ${hours % 24}h`;
+  } else {
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m overdue`;
+    if (hours < 24) return `${hours}h ${mins % 60}m overdue`;
+    return `${days}d ${hours % 24}h overdue`;
+  }
+}
+
+function getNagLevel(task) {
+  if (task.level !== 'auto') return task.level;
+  const now = new Date();
+  const dueDate = new Date(task.dueAt);
+  const overdue = now - dueDate;
+  if (overdue > 4 * 3600000) return 'relentless';
+  if (overdue > 2 * 3600000) return 'aggressive';
+  if (overdue > 30 * 60000) return 'normal';
+  return 'chill';
+}
+
+function getUrgencyStyle(task) {
+  const now = new Date();
+  const dueDate = new Date(task.dueAt);
+  const overdue = now - dueDate;
+  if (overdue > 2 * 3600000) return { border: 'border-red-600', bg: 'bg-red-950/40', dot: 'bg-red-500' };
+  if (overdue > 30 * 60000) return { border: 'border-orange-600', bg: 'bg-orange-950/40', dot: 'bg-orange-500' };
+  if (overdue > 0) return { border: 'border-yellow-600', bg: 'bg-yellow-950/30', dot: 'bg-yellow-500' };
+  return { border: 'border-zinc-700', bg: 'bg-zinc-900/60', dot: 'bg-zinc-500' };
+}
+
+function isOverdue(task) {
+  return new Date() > new Date(task.dueAt);
+}
+
+// ---- Notification helper ----
+async function requestNotificationPermission() {
+  if (!('Notification' in window)) return 'unsupported';
+  if (Notification.permission === 'granted') return 'granted';
+  if (Notification.permission === 'denied') return 'denied';
+  const result = await Notification.requestPermission();
+  return result;
+}
+
+function sendNotification(task, level) {
+  if (Notification.permission !== 'granted') return;
+  const msg = randPick(NAG_MESSAGES[level]);
+  const notif = new Notification(`🔔 ${task.title}`, {
+    body: msg,
+    icon: 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔔</text></svg>',
+    tag: task.id,
+    requireInteraction: level === 'relentless',
+    vibrate: level === 'relentless' ? [200, 100, 200, 100, 200] : [200],
+  });
+  notif.onclick = () => { window.focus(); notif.close(); };
+  return notif;
+}
+
+// ---- Storage ----
+function loadTasks() {
+  try {
+    const data = localStorage.getItem('nagreminder_tasks');
+    return data ? JSON.parse(data) : [];
+  } catch { return []; }
+}
+
+function saveTasks(tasks) {
+  localStorage.setItem('nagreminder_tasks', JSON.stringify(tasks));
+}
+
+// ---- Main App ----
+function App() {
+  const [tasks, setTasks] = useState(loadTasks);
+  const [showForm, setShowForm] = useState(false);
+  const [notifStatus, setNotifStatus] = useState(Notification.permission ?? 'default');
+  const [lastNag, setLastNag] = useState({});
+  const [ticker, setTicker] = useState(0); // force re-render for time display
+  const timerRef = useRef(null);
+
+  // Persist to localStorage
+  useEffect(() => { saveTasks(tasks); }, [tasks]);
+
+  // Time ticker - update display every 30s
+  useEffect(() => {
+    const t = setInterval(() => setTicker(n => n + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Nag engine - runs every 30 seconds, checks who needs nagging
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      const now = Date.now();
+      tasks.forEach(task => {
+        if (task.done || task.snoozedUntil && now < task.snoozedUntil) return;
+        const dueDate = new Date(task.dueAt);
+        if (now < dueDate.getTime()) return; // not due yet, skip
+
+        const level = getNagLevel(task);
+        const intervalMs = NAG_LEVELS[level].interval * 60 * 1000;
+        const lastNagTime = lastNag[task.id] || 0;
+        if (now - lastNagTime >= intervalMs) {
+          sendNotification(task, level);
+          setLastNag(prev => ({ ...prev, [task.id]: now }));
+        }
+      });
+    }, 30000);
+    return () => clearInterval(timerRef.current);
+  }, [tasks, lastNag]);
+
+  const handleRequestPermission = async () => {
+    const result = await requestNotificationPermission();
+    setNotifStatus(result);
+  };
+
+  const addTask = (taskData) => {
+    const task = {
+      id: Date.now().toString(),
+      title: taskData.title,
+      notes: taskData.notes,
+      dueAt: taskData.dueAt,
+      level: taskData.level,
+      recurrence: taskData.recurrence || { type: 'none' },
+      done: false,
+      snoozedUntil: null,
+      createdAt: new Date().toISOString(),
+      nagCount: 0,
+      seriesId: taskData.seriesId || null,
+      completionCount: taskData.completionCount || 0,
+    };
+    setTasks(prev => [task, ...prev]);
+    setShowForm(false);
+  };
+
+  const completeTask = (id) => {
+    setTasks(prev => {
+      const updated = prev.map(t => t.id === id ? { ...t, done: true, doneAt: new Date().toISOString() } : t);
+      const completed = updated.find(t => t.id === id);
+      // If recurring, spawn the next occurrence
+      if (completed && completed.recurrence && completed.recurrence.type !== 'none') {
+        const nextDue = getNextOccurrence(completed.recurrence, new Date().toISOString());
+        if (nextDue) {
+          const nextTask = {
+            id: Date.now().toString(),
+            title: completed.title,
+            notes: completed.notes,
+            dueAt: nextDue,
+            level: completed.level,
+            recurrence: completed.recurrence,
+            done: false,
+            snoozedUntil: null,
+            createdAt: new Date().toISOString(),
+            nagCount: 0,
+            seriesId: completed.seriesId || completed.id,
+            completionCount: (completed.completionCount || 0) + 1,
+          };
+          return [nextTask, ...updated];
+        }
+      }
+      return updated;
+    });
+  };
+
+  const snoozeTask = (id, minutes) => {
+    const until = Date.now() + minutes * 60000;
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, snoozedUntil: until } : t));
+  };
+
+  const deleteTask = (id) => {
+    setTasks(prev => prev.filter(t => t.id !== id));
+  };
+
+  const uncompleteTask = (id) => {
+    setTasks(prev => {
+      // If this task spawned a next occurrence, remove it
+      const task = prev.find(t => t.id === id);
+      if (task && task.recurrence && task.recurrence.type !== 'none') {
+        const seriesId = task.seriesId || task.id;
+        const spawned = prev.find(t => !t.done && t.seriesId === seriesId && t.id !== id);
+        if (spawned) {
+          return prev
+            .filter(t => t.id !== spawned.id)
+            .map(t => t.id === id ? { ...t, done: false, doneAt: null, snoozedUntil: null } : t);
+        }
+      }
+      return prev.map(t => t.id === id ? { ...t, done: false, doneAt: null, snoozedUntil: null } : t);
+    });
+  };
+
+  const skipRecurring = (id) => {
+    // Skip this occurrence, spawn the next one
+    setTasks(prev => {
+      const task = prev.find(t => t.id === id);
+      if (!task || !task.recurrence || task.recurrence.type === 'none') return prev;
+      const nextDue = getNextOccurrence(task.recurrence, new Date().toISOString());
+      if (!nextDue) return prev;
+      const nextTask = {
+        id: Date.now().toString(),
+        title: task.title,
+        notes: task.notes,
+        dueAt: nextDue,
+        level: task.level,
+        recurrence: task.recurrence,
+        done: false,
+        snoozedUntil: null,
+        createdAt: new Date().toISOString(),
+        nagCount: 0,
+        seriesId: task.seriesId || task.id,
+        completionCount: task.completionCount || 0,
+      };
+      const updated = prev.map(t => t.id === id ? { ...t, done: true, doneAt: new Date().toISOString(), skipped: true } : t);
+      return [nextTask, ...updated];
+    });
+  };
+
+  const pending = tasks.filter(t => !t.done).sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt));
+  const done = tasks.filter(t => t.done).sort((a, b) => new Date(b.doneAt) - new Date(a.doneAt));
+  const overdueCount = pending.filter(t => isOverdue(t)).length;
+
+  return (
+    <div className="min-h-screen bg-zinc-950">
+      {/* Header */}
+      <header className="border-b border-zinc-800 sticky top-0 z-20 bg-zinc-950/95 backdrop-blur">
+        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">🔔</span>
+              <h1 className="text-xl font-extrabold text-white tracking-tight">NagReminder</h1>
+              {overdueCount > 0 && (
+                <span className="bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded-full animate-pulse">
+                  {overdueCount} overdue
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-zinc-500 mt-0.5">It won't stop until you do.</p>
+          </div>
+          <button
+            onClick={() => setShowForm(true)}
+            className="bg-nag-600 hover:bg-nag-500 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-1.5"
+          >
+            <span className="text-base">+</span> Add Reminder
+          </button>
+        </div>
+      </header>
+
+      <main className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+
+        {/* Notification Permission Banner */}
+        {notifStatus !== 'granted' && (
+          <div className={`rounded-xl border p-4 flex items-start gap-3 ${
+            notifStatus === 'denied'
+              ? 'border-red-800 bg-red-950/40'
+              : 'border-nag-700 bg-nag-950/40'
+          }`}>
+            <span className="text-2xl mt-0.5">{notifStatus === 'denied' ? '🚫' : '🔔'}</span>
+            <div className="flex-1">
+              {notifStatus === 'denied' ? (
+                <>
+                  <p className="text-sm font-semibold text-red-400">Notifications blocked</p>
+                  <p className="text-xs text-zinc-400 mt-1">
+                    You blocked notifications. NagReminder can't nag without them. Open your browser settings and allow notifications for this page.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-nag-400">Enable notifications to get nagged</p>
+                  <p className="text-xs text-zinc-400 mt-1">Without notifications, this is just a list. Allow notifications and we'll actually bug you until things get done.</p>
+                  <button
+                    onClick={handleRequestPermission}
+                    className="mt-2 bg-nag-600 hover:bg-nag-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    Enable Notifications
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Active Tasks */}
+        {pending.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="text-6xl mb-4">😴</div>
+            <p className="text-zinc-400 font-medium">Nothing to nag about.</p>
+            <p className="text-zinc-600 text-sm mt-1">Add a reminder and we'll get to work.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {pending.map(task => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                onComplete={completeTask}
+                onSnooze={snoozeTask}
+                onDelete={deleteTask}
+                onSkip={skipRecurring}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Completed */}
+        {done.length > 0 && (
+          <div>
+            <h2 className="text-xs font-semibold text-zinc-600 uppercase tracking-wider mb-3">Completed ({done.length})</h2>
+            <div className="space-y-2">
+              {done.slice(0, 5).map(task => (
+                <div key={task.id} className="flex items-center justify-between bg-zinc-900/40 border border-zinc-800 rounded-xl px-4 py-3 opacity-60">
+                  <div className="flex items-center gap-3">
+                    <span className="text-green-500 text-lg">✓</span>
+                    <span className="text-sm text-zinc-400 line-through">{task.title}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => uncompleteTask(task.id)}
+                      className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                    >Undo</button>
+                    <button
+                      onClick={() => deleteTask(task.id)}
+                      className="text-xs text-zinc-700 hover:text-red-500 transition-colors ml-2"
+                    >✕</button>
+                  </div>
+                </div>
+              ))}
+              {done.length > 5 && (
+                <p className="text-xs text-zinc-700 text-center">{done.length - 5} more completed</p>
+              )}
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Add Task Modal */}
+      {showForm && (
+        <AddTaskModal onAdd={addTask} onCancel={() => setShowForm(false)} />
+      )}
+    </div>
+  );
+}
+
+// ---- Task Card ----
+function TaskCard({ task, onComplete, onSnooze, onDelete, onSkip }) {
+  const [showSnooze, setShowSnooze] = useState(false);
+  const now = new Date();
+  const dueDate = new Date(task.dueAt);
+  const overdue = now > dueDate;
+  const overdueMs = now - dueDate;
+  const level = getNagLevel(task);
+  const nagInfo = NAG_LEVELS[level];
+  const style = getUrgencyStyle(task);
+  const isSnoozed = task.snoozedUntil && now < new Date(task.snoozedUntil);
+
+  const isShaking = overdue && overdueMs > 2 * 3600000;
+  const isWiggling = overdue && overdueMs > 30 * 60000 && overdueMs <= 2 * 3600000;
+
+  // Snooze options escalate based on overdue time
+  const snoozeOptions = overdue
+    ? overdueMs > 3600000
+      ? [{ label: '10 min', value: 10 }, { label: '30 min', value: 30 }]
+      : [{ label: '15 min', value: 15 }, { label: '30 min', value: 30 }, { label: '1 hour', value: 60 }]
+    : [{ label: '15 min', value: 15 }, { label: '30 min', value: 30 }, { label: '1 hour', value: 60 }, { label: '2 hours', value: 120 }];
+
+  return (
+    <div className={`nag-card border rounded-xl overflow-hidden ${style.border} ${style.bg} ${isShaking ? 'animate-shake' : ''}`}>
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          {/* Left: Status dot + content */}
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            <div className="relative mt-1 flex-shrink-0">
+              <div className={`w-3 h-3 rounded-full ${style.dot}`}></div>
+              {overdue && (
+                <div className={`absolute inset-0 rounded-full ${style.dot} opacity-75 pulse-ring`}></div>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-white text-sm leading-tight break-words">{task.title}</p>
+              {task.notes && (
+                <p className="text-xs text-zinc-500 mt-0.5 break-words">{task.notes}</p>
+              )}
+              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                <span className={`text-xs font-medium ${overdue ? 'text-red-400' : 'text-zinc-400'}`}>
+                  {formatRelativeTime(dueDate)}
+                </span>
+                <span className="text-zinc-700 text-xs">·</span>
+                <span className={`text-xs ${nagInfo.color}`}>
+                  {nagInfo.emoji} {nagInfo.label} — every {nagInfo.interval}m
+                </span>
+                {task.recurrence && task.recurrence.type !== 'none' && (
+                  <>
+                    <span className="text-zinc-700 text-xs">·</span>
+                    <span className="text-xs text-purple-400">{formatRecurrence(task.recurrence)}</span>
+                    {task.completionCount > 0 && (
+                      <span className="text-xs text-zinc-600">#{task.completionCount + 1}</span>
+                    )}
+                  </>
+                )}
+                {isSnoozed && (
+                  <>
+                    <span className="text-zinc-700 text-xs">·</span>
+                    <span className="text-xs text-blue-400">😴 snoozed</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Done button */}
+          <button
+            onClick={() => onComplete(task.id)}
+            className="flex-shrink-0 bg-green-700 hover:bg-green-600 text-white text-xs font-bold px-3 py-2 rounded-lg transition-colors whitespace-nowrap"
+          >
+            Done ✓
+          </button>
+        </div>
+
+        {/* Snooze row */}
+        <div className="mt-3 flex items-center gap-2 justify-between">
+          <div className="flex items-center gap-1.5">
+            {task.recurrence && task.recurrence.type !== 'none' && (
+              <button
+                onClick={() => onSkip(task.id)}
+                className="text-xs text-zinc-600 hover:text-purple-400 transition-colors mr-1"
+                title="Skip this occurrence, spawn next"
+              >
+                ⏭ Skip
+              </button>
+            )}
+            {!showSnooze ? (
+              <button
+                onClick={() => setShowSnooze(true)}
+                className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+              >
+                😴 Snooze
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs text-zinc-500">Snooze for:</span>
+                {snoozeOptions.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => { onSnooze(task.id, opt.value); setShowSnooze(false); }}
+                    className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 rounded transition-colors"
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setShowSnooze(false)}
+                  className="text-xs text-zinc-700 hover:text-zinc-500 transition-colors"
+                >Cancel</button>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => onDelete(task.id)}
+            className="text-xs text-zinc-700 hover:text-red-500 transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Add Task Modal ----
+function AddTaskModal({ onAdd, onCancel }) {
+  const [title, setTitle] = useState('');
+  const [notes, setNotes] = useState('');
+  const [level, setLevel] = useState('normal');
+  const [recurrenceType, setRecurrenceType] = useState('none');
+  const [customDays, setCustomDays] = useState([]);
+
+  // Default due: 1 hour from now
+  const defaultDue = () => {
+    const d = new Date(Date.now() + 3600000);
+    d.setSeconds(0, 0);
+    return d.toISOString().slice(0, 16);
+  };
+  const [dueAt, setDueAt] = useState(defaultDue);
+
+  const toggleCustomDay = (day) => {
+    setCustomDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort());
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!title.trim() || !dueAt) return;
+    if (recurrenceType === 'custom' && customDays.length === 0) return;
+
+    const dueDate = new Date(dueAt);
+    const timeStr = `${String(dueDate.getHours()).padStart(2,'0')}:${String(dueDate.getMinutes()).padStart(2,'0')}`;
+
+    const recurrence = recurrenceType === 'none'
+      ? { type: 'none' }
+      : {
+          type: recurrenceType,
+          time: timeStr,
+          anchorDay: dueDate.getDay(),
+          ...(recurrenceType === 'custom' ? { days: customDays } : {}),
+        };
+
+    onAdd({ title: title.trim(), notes: notes.trim(), dueAt, level, recurrence });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-lg font-bold text-white">New Reminder</h2>
+            <p className="text-xs text-zinc-500">We'll nag you until it's done.</p>
+          </div>
+          <button onClick={onCancel} className="text-zinc-600 hover:text-zinc-400 text-xl transition-colors">✕</button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-xs font-medium text-zinc-400 block mb-1.5">What needs doing?</label>
+            <input
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="Call the dentist, finish the report..."
+              className="w-full bg-zinc-800 border border-zinc-700 text-white rounded-lg px-3 py-2.5 text-sm placeholder:text-zinc-600 focus:outline-none focus:border-nag-500 transition-colors"
+              autoFocus
+              maxLength={120}
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-zinc-400 block mb-1.5">Notes (optional)</label>
+            <input
+              type="text"
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Any extra context..."
+              className="w-full bg-zinc-800 border border-zinc-700 text-white rounded-lg px-3 py-2.5 text-sm placeholder:text-zinc-600 focus:outline-none focus:border-nag-500 transition-colors"
+              maxLength={200}
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-zinc-400 block mb-1.5">Due by</label>
+            <input
+              type="datetime-local"
+              value={dueAt}
+              onChange={e => setDueAt(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-nag-500 transition-colors"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-zinc-400 block mb-2">Repeat</label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {Object.entries(RECURRENCE_TYPES).map(([key, info]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setRecurrenceType(key)}
+                  className={`rounded-lg px-2 py-2 text-xs font-medium text-center transition-all border ${
+                    recurrenceType === key
+                      ? 'border-purple-500 bg-purple-950/60 text-purple-300'
+                      : 'border-zinc-700 bg-zinc-800/60 text-zinc-400 hover:border-zinc-600'
+                  }`}
+                >
+                  <span className="text-sm">{info.emoji}</span>
+                  <span className="block mt-0.5">{info.label}</span>
+                </button>
+              ))}
+            </div>
+            {recurrenceType === 'custom' && (
+              <div className="mt-2 flex gap-1.5 justify-center">
+                {DAY_NAMES.map((name, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => toggleCustomDay(i)}
+                    className={`w-9 h-9 rounded-full text-xs font-semibold transition-all border ${
+                      customDays.includes(i)
+                        ? 'border-purple-500 bg-purple-600 text-white'
+                        : 'border-zinc-700 bg-zinc-800 text-zinc-500 hover:border-zinc-600'
+                    }`}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {recurrenceType !== 'none' && (
+              <p className="text-xs text-zinc-600 mt-2">
+                When you complete this, the next one spawns automatically at the same time.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-zinc-400 block mb-2">Nag intensity</label>
+            <div className="grid grid-cols-2 gap-2">
+              {Object.entries(NAG_LEVELS).map(([key, info]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setLevel(key)}
+                  className={`rounded-lg px-3 py-2.5 text-xs font-medium text-left transition-all border ${
+                    level === key
+                      ? 'border-nag-500 bg-nag-950/60 text-nag-300'
+                      : 'border-zinc-700 bg-zinc-800/60 text-zinc-400 hover:border-zinc-600'
+                  }`}
+                >
+                  <span className="text-base mr-1.5">{info.emoji}</span>
+                  <span className="font-semibold">{info.label}</span>
+                  <span className="text-zinc-600 ml-1">· {info.interval}m</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-zinc-600 mt-2">Or set to Auto — intensity escalates as you ignore it.</p>
+            <button
+              type="button"
+              onClick={() => setLevel('auto')}
+              className={`mt-1.5 w-full rounded-lg px-3 py-2.5 text-xs font-medium text-left transition-all border ${
+                level === 'auto'
+                  ? 'border-red-500 bg-red-950/40 text-red-300'
+                  : 'border-zinc-700 bg-zinc-800/60 text-zinc-400 hover:border-zinc-600'
+              }`}
+            >
+              🎯 <span className="font-semibold">Auto-escalate</span>
+              <span className="text-zinc-600 ml-1">— starts chill, gets relentless</span>
+            </button>
+          </div>
+
+          <div className="flex gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium py-2.5 rounded-lg text-sm transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!title.trim() || !dueAt}
+              className="flex-1 bg-nag-600 hover:bg-nag-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
+            >
+              Start Nagging
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ---- Render ----
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
