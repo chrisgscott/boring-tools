@@ -9,7 +9,7 @@ TOOLS_DIR="$PORTFOLIO_DIR/tools"
 BUILDS_DIR="/Users/chrisgscott/projects/overnight-builds"
 
 # Each line: tool-name
-TOOLS=(subtrack-lite meditrack-simple habitflow nagreminder splitsimple coparent-simple pureplant-scheduler)
+TOOLS=(subtrack-lite meditrack-simple habitflow nagreminder splitsimple coparent-simple pureplant-scheduler dealscope)
 
 synced=0
 skipped=0
